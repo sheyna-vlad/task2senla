@@ -1,88 +1,100 @@
 @RestResource(urlMapping='/Leads')
 global class LeadRestApi {
+    public static final String CANNOT_CREATE_TASK ="Cannot create Task!";
+    public static final String CANNOT_FIND_LEAD ="Cannot find the Lead!";
     @HttpPost
-    global static Id getLeadByIdOrEmail(){
+    global static Lead getLeadByIdOrEmail(){
     
-        RestRequest req = RestContext.request;
-        RestResponse res = RestContext.response;
+        Lead getLead = LeadRESTHelper();
 
-        Lead getLead = LeadRESTHelper(req, res);
-        return getLead.Id;        
+        try {
+            if(getLead!=null){
+                return getLead;
+            }
+
+        }catch(NullPointerException e){
+            System.debug('The following exception has occurred: ' + e.getMessage());
+        }
+        return getLead;
     }
 
     @HttpPut
-    global static Id createTaskForLead(){
-
-        RestRequest req = RestContext.request;
-        RestResponse res = RestContext.response;                         
-
-        Lead targetLead = LeadRESTHelper(req,res);
+    global static void createTaskForLead(){
+                       
+        Lead targetLead = LeadRESTHelper();
         
         List<String> validSubjects = new List<String>();
         validSubjects.add('Call');
-        Map<String, Object> subjectParameter = 
-        (Map<String, Object>) JSON.deserializeUntyped(req.requestBody.toString());
-
-        String subj = subjectParameter.get('task body').tostring();
-		Task newTask;
+        validSubjects.add('Email');
+        validSubjects.add('Other');
+        validSubjects.add('Send Letter');
+        validSubjects.add('Send Quote');
         
-        if (targetLead!=null) {
-            if (validSubjects.contains(subj)) {
-                newTask = new Task(Subject = 'Other' ,
-                                Status = 'Not Started',
-                                WhoID = targetLead.Id, 
-                                OwnerId = targetLead.OwnerId);
+        Map<String, Object> subjectParameter = getRequestBody();
+
+        String subj = subjectParameter.get('subject').tostring();
+		
+        try {
+            if (targetLead!=null) {
+                Task newTask;
+                if (validSubjects.contains(subj)) {
+                    newTask = new Task(Subject = subj,
+                                    Status = 'Not Started',
+                                    WhoID = targetLead.Id, 
+                                    OwnerId = targetLead.OwnerId);
+                }
+                else {
+                    newTask = new Task(Status = 'Not Started',
+                                    WhoID = targetLead.Id, 
+                                    OwnerId = targetLead.OwnerId);
+                }
+                insert newTask;
             }
             else {
-                newTask = new Task(Status = 'Not Started',
-                                WhoID = targetLead.Id, 
-                                OwnerId = targetLead.OwnerId);
+                System.debug(LoggingLevel.ERROR,CANNOT_CREATE_TASK);
             }
-            insert newTask;
-            System.debug(LoggingLevel.FINEST,newTask);
-            return newTask.Id;
-        }
-        else {
-            System.debug(LoggingLevel.ERROR,'Cannot create Task!');
-            return null;
+        } catch (DmlException e) {
+            System.debug('The following exception has occurred: ' + e.getMessage());
         }
     }
 
-    public  static Lead LeadRESTHelper(RestRequest req, RestResponse res) {
+    public static Lead LeadRESTHelper() {
+
         Lead returnLead;
-        try{
-            String findLead = req.requestBody.tostring();
-            
-            Map<String, Object> parMap = (Map<String, Object>) JSON.deserializeUntyped(findLead);
-            String leadId = parMap.get('id').toString();
-            String leadEmail = parMap.get('email').toString();
-            if(leadId != null && leadId.length() == 18){
-                returnLead = [SELECT Id, Name, OwnerId
+        try{  
+            Map<String, Object> parMap = getRequestBody();
+            String leadId = '%' + parMap.get('id').toString() + '%';
+            String leadEmail = '%' + parMap.get('email').toString() + '%';
+
+            if(leadId != null && leadId.length() == 20){
+                returnLead = [SELECT Id, Name, OwnerId,	Address, MobilePhone, Status
                         FROM Lead
                         WHERE Id = :leadId
                         LIMIT 1];
+                return returnLead;
             }
             else if(leadEmail != null && leadEmail.contains('@')){
-                returnLead = [SELECT Id, Name, OwnerId
+                returnLead = [SELECT Id, Name, OwnerId,	Address, MobilePhone, Status
                         FROM Lead
                         WHERE Email = :leadEmail
                         LIMIT 1];
+                return returnLead;
             }
             else {
-                System.debug(LoggingLevel.ERROR,'Cannot find the Lead!');
-                //res.statusCode = 400;
+                System.debug(LoggingLevel.ERROR,CANNOT_FIND_LEAD);       
                 return null;
-                //returnLead =  null;
             }
-            
-            System.debug(LoggingLevel.INFO,returnLead);
-            //res.statusCode = 200;
-            res.responseBody = Blob.valueOf(JSON.serialize(returnLead));
-            return returnLead;
         }catch(NullPointerException e){
-            e.getStackTraceString();
-            System.debug(LoggingLevel.INFO,'Null pointer exception!!!');
-            return null;
+            System.debug('The following exception has occurred: ' + e.getMessage());
         }
+        return returnLead;
+    }
+    public static  Map<String, Object> getRequestBody(){
+        RestRequest req = RestContext.request;
+
+        Map<String, Object> subjectParameter = 
+        (Map<String, Object>) JSON.deserializeUntyped(req.requestBody.toString());
+        return subjectParameter;
+
     }
 }
